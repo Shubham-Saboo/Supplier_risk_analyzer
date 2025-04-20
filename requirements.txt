@@ -6,4 +6,4 @@ numpy==1.26.0
 python-dotenv==1.0.0
 plotly==5.18.0
 asyncio==3.4.3
-pydantic==2.5.2
+pydantic
