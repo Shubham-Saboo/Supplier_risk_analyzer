@@ -15,6 +15,7 @@ from google.adk.agents import LlmAgent, SequentialAgent
 from google.adk.sessions import InMemorySessionService
 from google.adk.runners import Runner
 from google.genai import types
+from google.adk.tools import google_search
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -93,13 +94,6 @@ class SupplierRiskAssessment(BaseModel):
     compliance_risks: List[RiskFactor] = Field(..., description="Compliance/regulatory risk factors")
     mitigation_strategies: List[MitigationStrategy] = Field(..., description="Risk mitigation strategies")
 
-def parse_json_safely(data: str, default_value: Any = None) -> Any:
-    """Safely parse JSON data with error handling"""
-    try:
-        return json.loads(data) if isinstance(data, str) else data
-    except json.JSONDecodeError:
-        return default_value
-
 class SupplierManagementSystem:
     """
     AI-powered system for analyzing supplier data and providing actionable insights
@@ -164,31 +158,7 @@ IMPORTANT: Store your analysis in state['contract_analysis'] for use by the Risk
             output_key="contract_analysis"
         )
         
-        self.supplier_risk_agent = LlmAgent(
-            name="SupplierRiskAgent",
-            model="gemini-2.0-flash-exp",
-            description="Analyzes potential supplier risks and recommends mitigation strategies",
-            instruction="""You are a Supplier Risk Agent specialized in risk assessment and mitigation.
-You are the final agent in the sequence. READ both state['performance_analysis'] and state['contract_analysis'] first.
-
-Your tasks:
-1. Identify financial risks (bankruptcy, cash flow problems)
-2. Assess supply chain disruption risks
-3. Evaluate geopolitical and regulatory risks
-4. Analyze compliance and sustainability risks
-5. Recommend specific risk mitigation strategies
-
-Consider:
-- Early warning signs in supplier performance
-- Contract terms that increase or mitigate risk
-- Geographic concentration of suppliers
-- Single-source dependencies
-- Industry-specific risk factors
-
-IMPORTANT: Store your final assessment in state['risk_assessment'] and ensure it aligns with the previous analyses.""",
-            output_schema=SupplierRiskAssessment,
-            output_key="risk_assessment"
-        )
+        self.supplier_risk_agent = SupplierRiskAgent()
         
         self.coordinator_agent = SequentialAgent(
             name="SupplierManagementCoordinator",
@@ -202,7 +172,7 @@ IMPORTANT: Store your final assessment in state['risk_assessment'] and ensure it
         
         self.runner = Runner(
             agent=self.coordinator_agent,
-            app_name=APP_NAME,
+            app_name="supplier_management",
             session_service=self.session_service
         )
 
@@ -229,8 +199,8 @@ IMPORTANT: Store your final assessment in state['risk_assessment'] and ensure it
             }
             
             session = self.session_service.create_session(
-                app_name=APP_NAME,
-                user_id=USER_ID,
+                app_name="supplier_management",
+                user_id="default_user",
                 session_id=session_id,
                 state=initial_state
             )
@@ -243,7 +213,7 @@ IMPORTANT: Store your final assessment in state['risk_assessment'] and ensure it
             )
             
             async for event in self.runner.run_async(
-                user_id=USER_ID,
+                user_id="default_user",
                 session_id=session_id,
                 new_message=user_content
             ):
@@ -251,8 +221,8 @@ IMPORTANT: Store your final assessment in state['risk_assessment'] and ensure it
                     break
             
             updated_session = self.session_service.get_session(
-                app_name=APP_NAME,
-                user_id=USER_ID,
+                app_name="supplier_management",
+                user_id="default_user",
                 session_id=session_id
             )
             
@@ -268,8 +238,8 @@ IMPORTANT: Store your final assessment in state['risk_assessment'] and ensure it
             raise
         finally:
             self.session_service.delete_session(
-                app_name=APP_NAME,
-                user_id=USER_ID,
+                app_name="supplier_management",
+                user_id="default_user",
                 session_id=session_id
             )
     
@@ -338,6 +308,45 @@ IMPORTANT: Store your final assessment in state['risk_assessment'] and ensure it
             }
         }
 
+class SupplierRiskAgent(LlmAgent):
+    def __init__(self):
+        super().__init__(
+            name="SupplierRiskAgent",
+            model="gemini-2.0-flash-exp",
+            description="Analyzes potential supplier risks and recommends mitigation strategies",
+            instruction="""You are a Supplier Risk Agent specialized in risk assessment and mitigation.
+You are the final agent in the sequence. READ both state['performance_analysis'] and state['contract_analysis'] first.
+
+Your tasks:
+1. Identify financial risks (bankruptcy, cash flow problems)
+2. Assess supply chain disruption risks
+3. Evaluate geopolitical and regulatory risks
+4. Analyze compliance and sustainability risks
+5. Recommend specific risk mitigation strategies
+
+Consider:
+- Early warning signs in supplier performance
+- Contract terms that increase or mitigate risk
+- Geographic concentration of suppliers
+- Single-source dependencies
+- Industry-specific risk factors
+
+IMPORTANT: Store your final assessment in state['risk_assessment'] and ensure it aligns with the previous analyses.""",
+            output_schema=SupplierRiskAssessment,
+            output_key="risk_assessment"
+        )
+
+    async def analyze_supplier(self, supplier_data: Dict[str, Any]) -> Dict[str, Any]:
+        # ... existing code ...
+        return results
+
+def parse_json_safely(data: str, default_value: Any = None) -> Any:
+    """Safely parse JSON data with error handling"""
+    try:
+        return json.loads(data) if isinstance(data, str) else data
+    except json.JSONDecodeError:
+        return default_value
+
 def display_performance_analysis(analysis: Dict[str, Any]):
     """Display performance analysis results with visualizations"""
     if not isinstance(analysis, dict):
@@ -391,19 +400,20 @@ def display_performance_analysis(analysis: Dict[str, Any]):
                 st.dataframe(df)
                 
                 # Create a bar chart for the metrics
-                fig = px.bar(
-                    df, 
-                    x="Metric", 
-                    y="Score", 
-                    color="Trend",
-                    color_discrete_map={
-                        "Improving": "green",
-                        "Stable": "blue",
-                        "Declining": "red"
-                    },
-                    title=f"{metric_type.split('_')[0].title()} Metrics"
-                )
-                st.plotly_chart(fig)
+                if len(df) > 1:
+                    fig = px.bar(
+                        df, 
+                        x="Metric", 
+                        y="Score", 
+                        color="Trend",
+                        color_discrete_map={
+                            "Improving": "green",
+                            "Stable": "blue",
+                            "Declining": "red"
+                        },
+                        title=f"{metric_type.split('_')[0].title()} Metrics"
+                    )
+                    st.plotly_chart(fig)
     
     # Display recommendations
     if "recommendations" in analysis and analysis["recommendations"]:
@@ -414,7 +424,7 @@ def display_performance_analysis(analysis: Dict[str, Any]):
                 st.write(f"**Potential Impact:** {rec.get('potential_impact', '')}")
 
 def display_contract_analysis(analysis: Dict[str, Any]):
-    """Display contract analysis results with visualizations"""
+    """Display contract analysis results"""
     if not isinstance(analysis, dict):
         st.error("Invalid contract analysis format")
         return
@@ -435,146 +445,63 @@ def display_contract_analysis(analysis: Dict[str, Any]):
     )
     
     # Display expiration information
-    col1, col2 = st.columns(2)
-    with col1:
-        expiration = analysis.get("expiration_date", "Unknown")
-        st.info(f"Contract Expiration: {expiration}")
-    with col2:
-        notice = analysis.get("renewal_notice_period", 0)
-        st.info(f"Renewal Notice Period: {notice} days")
+    expiration = analysis.get("expiration_date", "Unknown")
+    notice = analysis.get("renewal_notice_period", 0)
+    st.info(f"Contract Expiration: {expiration} | Renewal Notice Period: {notice} days")
     
-    # Create tabs for contract details and negotiation strategy
-    contract_tabs = st.tabs(["Contract Details", "Key Clauses", "Negotiation Strategy"])
+    # Display overall negotiation approach
+    st.info(f"**Negotiation Approach:** {analysis.get('negotiation_approach', '')}")
     
-    # Contract Details tab
-    with contract_tabs[0]:
-        details_col1, details_col2 = st.columns(2)
-        with details_col1:
-            payment_terms = analysis.get("payment_terms", "N/A")
-            st.info(f"Payment Terms: {payment_terms}")
+    # Display key leverage points
+    if "key_leverage_points" in analysis and analysis["key_leverage_points"]:
+        st.subheader("Key Leverage Points")
+        for i, point in enumerate(analysis["key_leverage_points"], 1):
+            st.markdown(f"**{i}.** {point}")
+    
+    # Display tactics
+    if "tactics" in analysis and analysis["tactics"]:
+        st.subheader("Recommended Negotiation Tactics")
+        for i, tactic in enumerate(analysis["tactics"]):
+            st.markdown(f"**{i+1}. {tactic.get('tactic_name', 'Tactic')}:** {tactic.get('description', '')}")
+    
+    # Display pricing targets
+    if "pricing_targets" in analysis and analysis["pricing_targets"]:
+        st.subheader("Pricing Targets")
+        pricing_data = []
+        for target in analysis["pricing_targets"]:
+            current = target.get('current_price', 0)
+            target_price = target.get('target_price', 0)
+            savings = current - target_price if current > 0 else 0
+            savings_pct = (savings / current * 100) if current > 0 else 0
             
-            renewal = "Yes" if analysis.get("auto_renewal", False) else "No"
-            st.info(f"Auto Renewal: {renewal}")
+            pricing_data.append({
+                "Category": target.get('category', ''),
+                "Current": current,
+                "Target": target_price,
+                "Savings": savings,
+                "Savings %": savings_pct
+            })
         
-        with details_col2:
-            exclusivity = "Yes" if analysis.get("exclusivity", False) else "No"
-            st.info(f"Exclusive Agreement: {exclusivity}")
-            
-            early_termination = "Yes" if analysis.get("early_termination", False) else "No"
-            st.info(f"Early Termination Clause: {early_termination}")
+        df = pd.DataFrame(pricing_data)
+        st.dataframe(df)
         
-        # Contract timeline visualization
-        st.subheader("Contract Timeline")
-        try:
-            start_date = datetime.strptime(analysis.get("start_date", ""), "%Y-%m-%d")
-            end_date = datetime.strptime(analysis.get("end_date", ""), "%Y-%m-%d")
-            
-            if start_date and end_date:
-                days_total = (end_date - start_date).days
-                days_remaining = (end_date - datetime.now()).days
-                
-                if days_remaining > 0:
-                    progress = 100 - (days_remaining / days_total * 100)
-                    st.progress(min(100, max(0, progress / 100)))
-                    st.info(f"{days_remaining} days remaining out of {days_total} total days")
-                else:
-                    st.progress(100/100)
-                    st.error(f"Contract expired {abs(days_remaining)} days ago")
-        except (ValueError, TypeError):
-            st.warning("Invalid date format for contract timeline")
-    
-    # Key Clauses tab
-    with contract_tabs[1]:
-        if "key_clauses" in analysis and analysis["key_clauses"]:
-            # Create a dataframe for the clauses
-            df = pd.DataFrame([{
-                "Clause": clause.get("clause_name", ""),
-                "Risk Level": clause.get("risk_level", ""),
-                "Description": clause.get("description", ""),
-                "Expiration": clause.get("expiration_date", "N/A")
-            } for clause in analysis["key_clauses"]])
-            
-            # Display as table
-            st.dataframe(df)
-            
-            # Create a pie chart for risk distribution
-            risk_counts = df["Risk Level"].value_counts().reset_index()
-            risk_counts.columns = ["Risk Level", "Count"]
-            
-            fig = px.pie(
-                risk_counts, 
-                values="Count", 
-                names="Risk Level",
-                color="Risk Level",
-                color_discrete_map={
-                    "Low": "green",
-                    "Medium": "orange",
-                    "High": "red"
-                },
-                title="Clause Risk Distribution"
-            )
+        # Create a bar chart for current vs target
+        if not df.empty:
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=df["Category"],
+                y=df["Current"],
+                name="Current Price",
+                marker_color="red"
+            ))
+            fig.add_trace(go.Bar(
+                x=df["Category"],
+                y=df["Target"],
+                name="Target Price",
+                marker_color="green"
+            ))
+            fig.update_layout(title="Current vs Target Pricing", barmode="group")
             st.plotly_chart(fig)
-    
-    # Negotiation Strategy tab
-    with contract_tabs[2]:
-        # Display overall approach
-        st.info(f"**Overall Approach:** {analysis.get('negotiation_approach', '')}")
-        
-        # Display leverage points
-        if "key_leverage_points" in analysis and analysis["key_leverage_points"]:
-            st.subheader("Key Leverage Points")
-            for i, point in enumerate(analysis["key_leverage_points"], 1):
-                st.markdown(f"**{i}.** {point}")
-        
-        # Display tactics
-        if "tactics" in analysis and analysis["tactics"]:
-            st.subheader("Recommended Negotiation Tactics")
-            for i, tactic in enumerate(analysis["tactics"]):
-                with st.expander(f"{i+1}. {tactic.get('tactic_name', 'Tactic')}"):
-                    st.write(f"**Description:** {tactic.get('description', '')}")
-                    st.write(f"**When to Use:** {tactic.get('when_to_use', '')}")
-        
-        # Display pricing targets
-        if "pricing_targets" in analysis and analysis["pricing_targets"]:
-            st.subheader("Pricing Targets")
-            
-            # Create a dataframe for targets
-            pricing_data = []
-            for target in analysis["pricing_targets"]:
-                current = target.get('current_price', 0)
-                target_price = target.get('target_price', 0)
-                savings = current - target_price if current > 0 else 0
-                savings_pct = (savings / current * 100) if current > 0 else 0
-                
-                pricing_data.append({
-                    "Category": target.get('category', ''),
-                    "Current": current,
-                    "Target": target_price,
-                    "Savings": savings,
-                    "Savings %": savings_pct,
-                    "Justification": target.get('justification', '')
-                })
-            
-            df = pd.DataFrame(pricing_data)
-            st.dataframe(df)
-            
-            # Create a bar chart for current vs target
-            if not df.empty:
-                fig = go.Figure()
-                fig.add_trace(go.Bar(
-                    x=df["Category"],
-                    y=df["Current"],
-                    name="Current Price",
-                    marker_color="red"
-                ))
-                fig.add_trace(go.Bar(
-                    x=df["Category"],
-                    y=df["Target"],
-                    name="Target Price",
-                    marker_color="green"
-                ))
-                fig.update_layout(title="Current vs Target Pricing", barmode="group")
-                st.plotly_chart(fig)
 
 def display_risk_assessment(assessment: Dict[str, Any]):
     """Display risk assessment with visualizations"""
@@ -684,44 +611,44 @@ def display_risk_assessment(assessment: Dict[str, Any]):
 def create_sample_supplier_data():
     """Create sample supplier data for demonstration"""
     return {
-        "supplier_name": "TechComponents Inc.",
-        "spend": 450000,
-        "category": "Electronics",
+        "supplier_name": "Apple Inc.",
+        "spend": 1000000000,
+        "category": "Technology",
         "performance_metrics": {
-            "quality_score": 85,
-            "on_time_delivery": 92,
-            "cost_efficiency": 78
+            "quality_score": 95,
+            "on_time_delivery": 98,
+            "cost_efficiency": 85
         },
         "contract_data": {
-            "start_date": "2022-01-15",
-            "end_date": "2025-01-14",
-            "renewal_notice_days": 90,
-            "payment_terms": "Net 60",
+            "start_date": "2023-01-01",
+            "end_date": "2026-01-01",
+            "renewal_notice_days": 180,
+            "payment_terms": "Net 30",
             "exclusivity": True,
             "clauses": [
                 {"name": "Price Adjustment", "content": "Prices may be adjusted annually based on market conditions"},
-                {"name": "Quality Requirements", "content": "Supplier must maintain defect rate below 2%"},
-                {"name": "Termination", "content": "Either party may terminate with 60 days written notice"}
+                {"name": "Quality Requirements", "content": "Supplier must maintain defect rate below 1%"},
+                {"name": "Termination", "content": "Either party may terminate with 90 days written notice"}
             ]
         },
         "financial_data": {
-            "annual_revenue": 12000000,
-            "profit_margin": 8.5,
-            "debt_ratio": 0.35,
-            "credit_rating": "B+"
+            "annual_revenue": 274515000000,
+            "profit_margin": 21.0,
+            "debt_ratio": 0.5,
+            "credit_rating": "AA+"
         }
     }
 
 def main():
     st.set_page_config(
-        page_title="Simplified Supplier Risk Analyzer",
+        page_title=" Supplier Risk Analyzer",
         page_icon="🏭",
         layout="wide",
         initial_sidebar_state="expanded"
     )
     
     # Application title and header
-    st.title("🏭 Simplified Supplier Risk Analyzer")
+    st.title("🏭 Supplier Risk Analyzer")
     st.caption("Powered by Google's Agent Development Kit (ADK) and Gemini AI")
     st.info("This tool analyzes supplier data to identify performance issues, contract risks, and potential threats.")
     
@@ -733,6 +660,17 @@ def main():
             ["Sample Data", "Upload JSON", "Manual Entry"],
             key="input_method"
         )
+        
+        # Add context about the application
+        st.markdown("---")
+        st.subheader("About the Application")
+        st.write("The Supplier Risk Analyzer is designed to help you analyze supplier data to identify performance issues, contract risks, and potential threats.")
+        st.write("**How to Use:**")
+        st.write("1. Select your input method: Use sample data, upload a JSON file, or enter data manually.")
+        st.write("2. Review and edit the supplier data as needed.")
+        st.write("3. Click 'Analyze Supplier' to run the analysis.")
+        st.write("4. View the results in the 'Analysis Results' tab, where you can explore performance, contract, and risk assessments.")
+        st.write("5. Download the analysis results for further review or sharing.")
     
     if not GEMINI_API_KEY:
         st.error("🔑 GOOGLE_API_KEY not found in environment variables. Please add it to your .env file.")
@@ -753,7 +691,7 @@ def main():
             # Allow editing of sample data
             with st.expander("View and Edit Sample Data"):
                 supplier_name = st.text_input("Supplier Name", value=supplier_data["supplier_name"])
-                annual_spend = st.number_input("Annual Spend ($)", value=supplier_data["spend"], step=10000)
+                annual_spend = st.number_input("Annual Spend ($)", value=supplier_data["spend"], step=1000000)
                 category = st.text_input("Category", value=supplier_data["category"])
                 
                 # Update the data
@@ -778,7 +716,7 @@ def main():
             with st.form("supplier_form"):
                 st.subheader("Basic Information")
                 supplier_name = st.text_input("Supplier Name", value="New Supplier")
-                annual_spend = st.number_input("Annual Spend ($)", min_value=0, value=100000, step=10000)
+                annual_spend = st.number_input("Annual Spend ($)", min_value=0, value=100000000, step=1000000)
                 category = st.text_input("Category", value="General")
                 
                 st.subheader("Performance Metrics")
@@ -794,7 +732,7 @@ def main():
                 # Enhanced contract details
                 col1, col2 = st.columns(2)
                 with col1:
-                    renewal_notice = st.number_input("Renewal Notice Period (days)", min_value=0, value=90, step=15)
+                    renewal_notice = st.number_input("Renewal Notice Period (days)", min_value=0, value=180, step=15)
                     exclusivity = st.checkbox("Exclusive Supplier Agreement", value=False)
                 with col2:
                     auto_renewal = st.checkbox("Automatic Renewal", value=True)
@@ -823,8 +761,8 @@ def main():
                         })
                 
                 st.subheader("Financial Data")
-                revenue = st.number_input("Annual Revenue ($)", min_value=0, value=5000000, step=100000)
-                margin = st.number_input("Profit Margin (%)", min_value=0.0, max_value=100.0, value=7.5, step=0.1)
+                revenue = st.number_input("Annual Revenue ($)", min_value=0, value=274515000000, step=100000000)
+                margin = st.number_input("Profit Margin (%)", min_value=0.0, max_value=100.0, value=21.0, step=0.1)
                 
                 submit_button = st.form_submit_button("Create Supplier Data")
                 
@@ -932,7 +870,7 @@ def main():
     
     # Add footer
     st.markdown("---")
-    st.caption("Simplified Supplier Risk Analyzer | Powered by Google ADK and Gemini AI")
+    st.caption("Supplier Risk Analyzer | Powered by Google ADK and Gemini AI")
 
 if __name__ == "__main__":
     main() 

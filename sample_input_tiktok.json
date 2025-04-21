@@ -1,0 +1,28 @@
+{
+    "supplier_name": "TikTok Inc.",
+    "spend": 500000000,
+    "category": "Social Media",
+    "performance_metrics": {
+        "quality_score": 90,
+        "on_time_delivery": 95,
+        "cost_efficiency": 88
+    },
+    "contract_data": {
+        "start_date": "2023-06-01",
+        "end_date": "2026-06-01",
+        "renewal_notice_days": 120,
+        "payment_terms": "Net 45",
+        "exclusivity": false,
+        "clauses": [
+            {"name": "Data Privacy", "content": "Supplier must comply with all data privacy regulations."},
+            {"name": "Content Moderation", "content": "Supplier is responsible for moderating content according to platform guidelines."},
+            {"name": "Termination", "content": "Either party may terminate with 60 days written notice."}
+        ]
+    },
+    "financial_data": {
+        "annual_revenue": 1000000000,
+        "profit_margin": 15.0,
+        "debt_ratio": 0.4,
+        "credit_rating": "A"
+    }
+} 
